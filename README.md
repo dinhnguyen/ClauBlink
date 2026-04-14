@@ -4,21 +4,51 @@ Physical LED indicator that shows Claude AI activity status in real-time.
 
 ## Supported Hardware
 
-| Board | LED Type | Connectivity |
-|-------|----------|-------------|
-| ESP32-C3 Super Mini (Lolin C3 Mini) | GPIO 8 (active-low) | USB Serial + WiFi |
-| Waveshare RP2040-Zero | WS2812B NeoPixel (pin 16) | USB Serial only |
+| Board | LED | Connectivity |
+|-------|-----|-------------|
+| ESP32-C3 Super Mini (Lolin C3 Mini) | On-board LED (GPIO 8) + optional NeoPixel (GPIO 2) | USB Serial + WiFi |
+| Waveshare RP2040-Zero | WS2812B NeoPixel strip (GPIO 16, up to 5 LEDs) | USB Serial only |
+
+## Wiring
+
+### ESP32-C3 Super Mini
+
+On-board LED (GPIO 8) hoạt động mặc định, không cần nối dây.
+
+Thêm NeoPixel RGB (tùy chọn):
+
+```
+WS2812B         ESP32-C3
+───────         ────────
+VCC        →    3V3
+GND        →    GND
+DIN        →    GPIO 2
+```
+
+### Waveshare RP2040-Zero
+
+LED NeoPixel on-board (GPIO 16) đã có sẵn trên mạch. Nếu dùng LED strip ngoài:
+
+```
+WS2812B Strip   RP2040-Zero
+─────────────   ───────────
+VCC          →  3V3 (≤5 LEDs) hoặc 5V external
+GND          →  GND
+DIN          →  GPIO 16
+```
+
+> Nếu dùng hơn 2-3 LED, nên cấp nguồn 5V riêng cho strip (chung GND với board).
 
 ## LED States
 
-| State | Command | Blink Rate | RP2040 Color | Behavior |
-|-------|---------|-----------|--------------|----------|
+| State | Command | Blink Rate | NeoPixel Color | Behavior |
+|-------|---------|-----------|----------------|----------|
 | RESPONSE | `RESPONSE` | Fast (200ms) | Red | Claude is streaming a response |
 | WORKING | `WORKING` | Slow (800ms) | Blue | Claude is using tools / thinking |
 | DONE | `DONE` | Solid on | Green | Claude finished |
 | IDLE | `OFF` | Off | — | LED off |
 
-On ESP32-C3 (single-color LED), RESPONSE and WORKING are distinguished by blink speed.
+On ESP32-C3, on-board LED (đơn sắc) và NeoPixel (RGB) cùng phản ánh trạng thái song song. Không lắp NeoPixel thì on-board LED vẫn hoạt động bình thường — phân biệt RESPONSE vs WORKING bằng tốc độ nháy.
 
 ## Setup
 

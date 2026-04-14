@@ -1,19 +1,23 @@
 #include <Arduino.h>
 
+#include <Adafruit_NeoPixel.h>
+
 #ifdef BOARD_ESP32C3
   #include <WiFi.h>
   #include <WebServer.h>
   #include <ESPmDNS.h>
   #include <Preferences.h>
   #define LED_PIN 8
+  #define NEOPIXEL_PIN 2
+  #define NUM_LEDS 1
 #endif
 
 #ifdef BOARD_RP2040
-  #include <Adafruit_NeoPixel.h>
   #define NEOPIXEL_PIN 16
   #define NUM_LEDS 5
-  Adafruit_NeoPixel strip(NUM_LEDS, NEOPIXEL_PIN, NEO_GRB + NEO_KHZ800);
 #endif
+
+Adafruit_NeoPixel strip(NUM_LEDS, NEOPIXEL_PIN, NEO_GRB + NEO_KHZ800);
 
 #define MAX_SLOTS 5
 
@@ -32,7 +36,6 @@ String serialBuffer = "";
   Preferences prefs;
 #endif
 
-#ifdef BOARD_RP2040
 uint32_t getColor(State state) {
   switch (state) {
     case RESPONSE: return strip.Color(255, 0, 0);   // red
@@ -41,12 +44,9 @@ uint32_t getColor(State state) {
     default:       return 0;
   }
 }
-#endif
 
 void updateLeds() {
-  #ifdef BOARD_RP2040
-    strip.show();
-  #endif
+  strip.show();
 }
 
 void setSlotLed(int slot, bool on) {
@@ -56,9 +56,9 @@ void setSlotLed(int slot, bool on) {
       digitalWrite(LED_PIN, on ? LOW : HIGH);
     }
   #endif
-  #ifdef BOARD_RP2040
+  if (slot < NUM_LEDS) {
     strip.setPixelColor(slot, on ? getColor(slotStates[slot]) : 0);
-  #endif
+  }
   slotLedOn[slot] = on;
 }
 
@@ -245,12 +245,10 @@ void setup() {
   #ifdef BOARD_ESP32C3
     pinMode(LED_PIN, OUTPUT);
   #endif
-  #ifdef BOARD_RP2040
-    strip.begin();
-    strip.setBrightness(80);
-    strip.clear();
-    strip.show();
-  #endif
+  strip.begin();
+  strip.setBrightness(80);
+  strip.clear();
+  strip.show();
 
   delay(2000);
 
