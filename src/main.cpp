@@ -11,16 +11,18 @@
 #ifdef BOARD_RP2040
   #include <Adafruit_NeoPixel.h>
   #define NEOPIXEL_PIN 16
-  #define NEOPIXEL_COUNT 1
-  Adafruit_NeoPixel pixel(NEOPIXEL_COUNT, NEOPIXEL_PIN, NEO_GRB + NEO_KHZ800);
-  uint32_t ledColor = 0;
+  #define NUM_LEDS 5
+  Adafruit_NeoPixel strip(NUM_LEDS, NEOPIXEL_PIN, NEO_GRB + NEO_KHZ800);
 #endif
 
+#define MAX_SLOTS 5
+
 enum State { IDLE, RESPONSE, WORKING, DONE };
-State currentState = IDLE;
-unsigned long stateStart = 0;
-unsigned long lastToggle = 0;
-bool ledOn = false;
+State slotStates[MAX_SLOTS] = { IDLE, IDLE, IDLE, IDLE, IDLE };
+unsigned long slotToggle[MAX_SLOTS] = { 0 };
+unsigned long slotStart[MAX_SLOTS] = { 0 };
+bool slotLedOn[MAX_SLOTS] = { false };
+
 String serialBuffer = "";
 
 #ifdef BOARD_ESP32C3
@@ -30,41 +32,63 @@ String serialBuffer = "";
   Preferences prefs;
 #endif
 
-void setLed(bool on) {
+#ifdef BOARD_RP2040
+uint32_t getColor(State state) {
+  switch (state) {
+    case RESPONSE: return strip.Color(255, 0, 255); // magenta
+    case WORKING:  return strip.Color(0, 0, 255);   // blue
+    case DONE:     return strip.Color(0, 80, 0);     // green
+    default:       return 0;
+  }
+}
+#endif
+
+void updateLeds() {
+  #ifdef BOARD_RP2040
+    strip.show();
+  #endif
+}
+
+void setSlotLed(int slot, bool on) {
+  if (slot < 0 || slot >= MAX_SLOTS) return;
   #ifdef BOARD_ESP32C3
-    digitalWrite(LED_PIN, on ? LOW : HIGH);
+    if (slot == 0) {
+      digitalWrite(LED_PIN, on ? LOW : HIGH);
+    }
   #endif
   #ifdef BOARD_RP2040
-    pixel.setPixelColor(0, on ? ledColor : 0);
-    pixel.show();
+    strip.setPixelColor(slot, on ? getColor(slotStates[slot]) : 0);
   #endif
-  ledOn = on;
+  slotLedOn[slot] = on;
 }
 
 void setState(String cmd) {
   cmd.trim();
   cmd.toUpperCase();
-  if (cmd == "RESPONSE") {
-    currentState = RESPONSE;
-    stateStart = millis();
-    #ifdef BOARD_RP2040
-      ledColor = pixel.Color(80, 0, 0); // red
-    #endif
-  } else if (cmd == "WORKING") {
-    currentState = WORKING;
-    stateStart = millis();
-    #ifdef BOARD_RP2040
-      ledColor = pixel.Color(80, 40, 0); // orange
-    #endif
-  } else if (cmd == "DONE") {
-    currentState = DONE;
-    stateStart = millis();
-    #ifdef BOARD_RP2040
-      ledColor = pixel.Color(0, 80, 0); // green
-    #endif
-  } else if (cmd == "OFF") {
-    currentState = IDLE;
-    setLed(false);
+
+  // Parse STATE:SLOT format
+  String state = cmd;
+  int slot = 0;
+  int colonIdx = cmd.indexOf(':');
+  if (colonIdx > 0) {
+    state = cmd.substring(0, colonIdx);
+    slot = cmd.substring(colonIdx + 1).toInt();
+  }
+  if (slot < 0 || slot >= MAX_SLOTS) slot = 0;
+
+  if (state == "RESPONSE") {
+    slotStates[slot] = RESPONSE;
+    slotStart[slot] = millis();
+  } else if (state == "WORKING") {
+    slotStates[slot] = WORKING;
+    slotStart[slot] = millis();
+  } else if (state == "DONE") {
+    slotStates[slot] = DONE;
+    slotStart[slot] = millis();
+  } else if (state == "OFF") {
+    slotStates[slot] = IDLE;
+    setSlotLed(slot, false);
+    updateLeds();
   }
 }
 
@@ -76,7 +100,7 @@ void handleSerial() {
         setState(serialBuffer);
       }
       serialBuffer = "";
-    } else if (c >= 'A' && c <= 'z') {
+    } else if ((c >= 'A' && c <= 'z') || c == ':' || (c >= '0' && c <= '9')) {
       serialBuffer += c;
     }
   }
@@ -135,10 +159,10 @@ void handleResetWiFi() {
 }
 
 void startHTTPServer() {
-  server.on("/RESPONSE", []() { handleCommand("RESPONSE"); });
-  server.on("/WORKING", []() { handleCommand("WORKING"); });
-  server.on("/DONE", []() { handleCommand("DONE"); });
-  server.on("/OFF", []() { handleCommand("OFF"); });
+  server.on("/RESPONSE", []() { handleCommand("RESPONSE?slot=" + server.arg("slot")); });
+  server.on("/WORKING", []() { handleCommand("WORKING?slot=" + server.arg("slot")); });
+  server.on("/DONE", []() { handleCommand("DONE?slot=" + server.arg("slot")); });
+  server.on("/OFF", []() { handleCommand("OFF?slot=" + server.arg("slot")); });
   server.on("/reset", handleResetWiFi);
   server.begin();
   Serial.println("HTTP server started on port 80");
@@ -191,12 +215,6 @@ void startAPPortal() {
   Serial.print("AP portal started. SSID: ClauBlink, IP: ");
   Serial.println(WiFi.softAPIP());
 
-  for (int i = 0; i < 6; i++) {
-    setLed(i % 2 == 0);
-    delay(200);
-  }
-  setLed(false);
-
   server.on("/", handleConfigPage);
   server.on("/save", HTTP_POST, handleSaveWiFi);
   server.begin();
@@ -228,11 +246,12 @@ void setup() {
     pinMode(LED_PIN, OUTPUT);
   #endif
   #ifdef BOARD_RP2040
-    pixel.begin();
-    pixel.setBrightness(80);
+    strip.begin();
+    strip.setBrightness(80);
+    strip.clear();
+    strip.show();
   #endif
 
-  setLed(false);
   delay(2000);
 
   Serial.println("=== CLAUBLINK BOOT ===");
@@ -254,34 +273,33 @@ void loop() {
   #endif
 
   unsigned long now = millis();
-  unsigned long elapsed = now - stateStart;
 
-  switch (currentState) {
-    case IDLE:
-      break;
+  for (int i = 0; i < MAX_SLOTS; i++) {
+    switch (slotStates[i]) {
+      case IDLE:
+        break;
 
-    case RESPONSE:
-      #ifdef BOARD_RP2040
-        ledColor = pixel.Color(255, 0, 255);
-      #endif
-      setLed(true);
-      break;
+      case RESPONSE:
+        if (now - slotStart[i] < 10000) {
+          setSlotLed(i, true);
+        } else {
+          slotStates[i] = IDLE;
+          setSlotLed(i, false);
+        }
+        break;
 
-    case WORKING:
-      #ifdef BOARD_RP2040
-        ledColor = pixel.Color(0, 0, 255);
-      #endif
-      if (now - lastToggle >= 200) {
-        setLed(!ledOn);
-        lastToggle = now;
-      }
-      break;
+      case WORKING:
+        if (now - slotToggle[i] >= 200) {
+          setSlotLed(i, !slotLedOn[i]);
+          slotToggle[i] = now;
+        }
+        break;
 
-    case DONE:
-      #ifdef BOARD_RP2040
-        ledColor = pixel.Color(0, 80, 0);
-      #endif
-      setLed(true);
-      break;
+      case DONE:
+        setSlotLed(i, true);
+        break;
+    }
   }
+
+  updateLeds();
 }

@@ -1,12 +1,42 @@
 #!/bin/bash
-# Usage: ./notify.sh RESPONSE|WORKING|DONE|OFF
-# Mode 1: USB serial (auto-detect)
-# Mode 2: WiFi HTTP via mDNS
+# ClauBlink notify script
+# Usage: ./notify.sh <HOOK_EVENT> [SESSION_SLOT]
+# Hook events: PreToolUse, PostToolUse, Stop, OFF
+# Session slot: 0-4 (default: 0)
 
-STATE="$1"
-if [ -z "$STATE" ]; then
+EVENT="$1"
+SLOT="${2:-0}"
+
+if [ -z "$EVENT" ]; then
   exit 0
 fi
+
+FLAG_DIR="/tmp/claublink"
+mkdir -p "$FLAG_DIR"
+FLAG_FILE="$FLAG_DIR/tools_used_${SLOT}"
+
+# Determine LED state based on hook event
+case "$EVENT" in
+  PostToolUse)
+    touch "$FLAG_FILE"
+    STATE="WORKING:${SLOT}"
+    ;;
+  Stop)
+    if [ -f "$FLAG_FILE" ]; then
+      STATE="DONE:${SLOT}"
+      rm -f "$FLAG_FILE"
+    else
+      STATE="RESPONSE:${SLOT}"
+    fi
+    ;;
+  OFF)
+    STATE="OFF:${SLOT}"
+    rm -f "$FLAG_FILE"
+    ;;
+  *)
+    STATE="${EVENT}:${SLOT}"
+    ;;
+esac
 
 # Try USB serial first
 PORT=$(ls /dev/cu.usbmodem* 2>/dev/null | head -1)
@@ -18,4 +48,5 @@ if [ -n "$PORT" ]; then
 fi
 
 # Fallback: WiFi HTTP via mDNS
-curl -s --connect-timeout 1 "http://claublink.local/$STATE" > /dev/null 2>&1
+CMD=$(echo "$STATE" | cut -d: -f1)
+curl -s --connect-timeout 1 "http://claublink.local/${CMD}?slot=${SLOT}" > /dev/null 2>&1
