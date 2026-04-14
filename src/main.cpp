@@ -159,10 +159,10 @@ void handleResetWiFi() {
 }
 
 void startHTTPServer() {
-  server.on("/RESPONSE", []() { handleCommand("RESPONSE?slot=" + server.arg("slot")); });
-  server.on("/WORKING", []() { handleCommand("WORKING?slot=" + server.arg("slot")); });
-  server.on("/DONE", []() { handleCommand("DONE?slot=" + server.arg("slot")); });
-  server.on("/OFF", []() { handleCommand("OFF?slot=" + server.arg("slot")); });
+  server.on("/RESPONSE", []() { handleCommand("RESPONSE:" + server.arg("slot")); });
+  server.on("/WORKING", []() { handleCommand("WORKING:" + server.arg("slot")); });
+  server.on("/DONE", []() { handleCommand("DONE:" + server.arg("slot")); });
+  server.on("/OFF", []() { handleCommand("OFF:" + server.arg("slot")); });
   server.on("/reset", handleResetWiFi);
   server.begin();
   Serial.println("HTTP server started on port 80");
