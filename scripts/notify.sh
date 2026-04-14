@@ -50,6 +50,17 @@ if [ -n "$PORT" ]; then
   exit 0
 fi
 
-# Fallback: WiFi HTTP via mDNS
+# Fallback: WiFi HTTP (try mDNS, then cached IP)
 CMD=$(echo "$STATE" | cut -d: -f1)
-curl -s --connect-timeout 1 "http://claublink.local/${CMD}?slot=${SLOT}" > /dev/null 2>&1
+IP_CACHE="/tmp/claublink/ip"
+
+# Try mDNS first
+if curl -s --connect-timeout 2 --max-time 3 "http://claublink.local/${CMD}?slot=${SLOT}" > /dev/null 2>&1; then
+  exit 0
+fi
+
+# Fallback: cached IP
+if [ -f "$IP_CACHE" ]; then
+  IP=$(cat "$IP_CACHE")
+  curl -s --connect-timeout 1 --max-time 2 "http://${IP}/${CMD}?slot=${SLOT}" > /dev/null 2>&1
+fi
