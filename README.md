@@ -11,12 +11,14 @@ Physical LED indicator that shows Claude AI activity status in real-time.
 
 ## LED States
 
-| State | Command | ESP32-C3 | RP2040 NeoPixel | Behavior |
-|-------|---------|----------|-----------------|----------|
-| RESPONSE | `RESPONSE` | Fast blink | Magenta solid | Stays on until next command |
-| WORKING | `WORKING` | Slow blink | Blue blink | 200ms toggle |
-| DONE | `DONE` | Solid on | Green solid | Stays on until next command |
-| IDLE | `OFF` | Off | Off | LED off |
+| State | Command | Blink Rate | RP2040 Color | Behavior |
+|-------|---------|-----------|--------------|----------|
+| RESPONSE | `RESPONSE` | Fast (200ms) | Red | Claude is streaming a response |
+| WORKING | `WORKING` | Slow (800ms) | Blue | Claude is using tools / thinking |
+| DONE | `DONE` | Solid on | Green | Claude finished |
+| IDLE | `OFF` | Off | — | LED off |
+
+On ESP32-C3 (single-color LED), RESPONSE and WORKING are distinguished by blink speed.
 
 ## Setup
 
@@ -61,16 +63,44 @@ Auto-detects USB serial first, falls back to WiFi HTTP via mDNS.
 
 ### Claude Code Hooks
 
-Add to `~/.claude/settings.json`:
+Add to `~/.claude/settings.json` (or project-level `.claude/settings.json`):
 
 ```json
 {
   "hooks": {
-    "PreToolUse": [{ "command": "./scripts/notify.sh WORKING" }],
-    "PostToolUse": [{ "command": "./scripts/notify.sh RESPONSE" }],
-    "Stop": [{ "command": "./scripts/notify.sh DONE" }]
+    "PreToolUse": [
+      {
+        "matcher": "",
+        "hooks": [{ "type": "command", "command": "/path/to/ClauBlink/scripts/notify.sh PreToolUse" }]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "",
+        "hooks": [{ "type": "command", "command": "/path/to/ClauBlink/scripts/notify.sh PostToolUse" }]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [{ "type": "command", "command": "/path/to/ClauBlink/scripts/notify.sh Stop" }]
+      }
+    ]
   }
 }
+```
+
+Replace `/path/to/ClauBlink` with your actual install path.
+
+**Hook logic** (`notify.sh`):
+- `PreToolUse` → LED blinks fast (RESPONSE) — Claude is streaming
+- `PostToolUse` → LED blinks slow (WORKING) — Claude is thinking/using tools, sets a flag
+- `Stop` → if flag exists: LED solid (DONE); otherwise: LED blinks fast (RESPONSE, no tools were used)
+- `OFF` → LED off, clears flag
+
+**Multi-session slots**: pass slot number as second argument (0-4):
+```json
+{ "type": "command", "command": "/path/to/ClauBlink/scripts/notify.sh PreToolUse 2" }
 ```
 
 ## Project Structure

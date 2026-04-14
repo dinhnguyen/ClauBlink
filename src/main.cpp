@@ -35,7 +35,7 @@ String serialBuffer = "";
 #ifdef BOARD_RP2040
 uint32_t getColor(State state) {
   switch (state) {
-    case RESPONSE: return strip.Color(255, 0, 255); // magenta
+    case RESPONSE: return strip.Color(255, 0, 0);   // red
     case WORKING:  return strip.Color(0, 0, 255);   // blue
     case DONE:     return strip.Color(0, 80, 0);     // green
     default:       return 0;
@@ -280,16 +280,14 @@ void loop() {
         break;
 
       case RESPONSE:
-        if (now - slotStart[i] < 10000) {
-          setSlotLed(i, true);
-        } else {
-          slotStates[i] = IDLE;
-          setSlotLed(i, false);
+        if (now - slotToggle[i] >= 200) {
+          setSlotLed(i, !slotLedOn[i]);
+          slotToggle[i] = now;
         }
         break;
 
       case WORKING:
-        if (now - slotToggle[i] >= 200) {
+        if (now - slotToggle[i] >= 800) {
           setSlotLed(i, !slotLedOn[i]);
           slotToggle[i] = now;
         }

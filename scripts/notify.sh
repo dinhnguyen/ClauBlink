@@ -17,6 +17,9 @@ FLAG_FILE="$FLAG_DIR/tools_used_${SLOT}"
 
 # Determine LED state based on hook event
 case "$EVENT" in
+  PreToolUse)
+    STATE="RESPONSE:${SLOT}"
+    ;;
   PostToolUse)
     touch "$FLAG_FILE"
     STATE="WORKING:${SLOT}"
