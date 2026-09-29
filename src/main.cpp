@@ -7,9 +7,24 @@
   #include <WebServer.h>
   #include <ESPmDNS.h>
   #include <Preferences.h>
+  #include <GxEPD2_BW.h>
+  #include <Fonts/FreeSansBold18pt7b.h>
+  #include <Fonts/FreeSans9pt7b.h>
   #define LED_PIN 8
-  #define NEOPIXEL_PIN 2
+  // NeoPixel moved to GPIO 10 on ESP32-C3 (GPIO 2 reused as EPD_RST)
+  #define NEOPIXEL_PIN 10
   #define NUM_LEDS 1
+
+  // ePaper WeAct 2.13" SSD1680 - wiring
+  #define EPD_BUSY 3
+  #define EPD_RST  2
+  #define EPD_DC   1
+  #define EPD_CS   7
+  #define EPD_CLK  4
+  #define EPD_DIN  6
+
+  SPIClass epd_spi(FSPI);
+  GxEPD2_BW<GxEPD2_213_BN, GxEPD2_213_BN::HEIGHT> epaper(GxEPD2_213_BN(EPD_CS, EPD_DC, EPD_RST, EPD_BUSY));
 #endif
 
 #ifdef BOARD_RP2040
@@ -22,6 +37,10 @@ Adafruit_NeoPixel strip(NUM_LEDS, NEOPIXEL_PIN, NEO_GRB + NEO_KHZ800);
 #define MAX_SLOTS 5
 
 enum State { IDLE, RESPONSE, WORKING, DONE };
+
+#ifdef BOARD_ESP32C3
+  State lastDisplayState = IDLE;
+#endif
 State slotStates[MAX_SLOTS] = { IDLE, IDLE, IDLE, IDLE, IDLE };
 unsigned long slotToggle[MAX_SLOTS] = { 0 };
 unsigned long slotStart[MAX_SLOTS] = { 0 };
@@ -62,6 +81,28 @@ void setSlotLed(int slot, bool on) {
   slotLedOn[slot] = on;
 }
 
+#ifdef BOARD_ESP32C3
+void updateEpaper(State state, int slot) {
+  const char* label;
+  switch (state) {
+    case RESPONSE: label = "RESPONSE"; break;
+    case WORKING:  label = "WORKING";  break;
+    case DONE:     label = "DONE";     break;
+    default:       label = "IDLE";     break;
+  }
+
+  epaper.setFullWindow();
+  epaper.firstPage();
+  do {
+    epaper.fillScreen(GxEPD_WHITE);
+    epaper.setFont(&FreeSansBold18pt7b);
+    epaper.setTextColor(GxEPD_BLACK);
+    epaper.setCursor(10, 70);
+    epaper.print(label);
+  } while (epaper.nextPage());
+}
+#endif
+
 void setState(String cmd) {
   cmd.trim();
   cmd.toUpperCase();
@@ -76,20 +117,37 @@ void setState(String cmd) {
   }
   if (slot < 0 || slot >= MAX_SLOTS) slot = 0;
 
+  State newState = IDLE;
+  bool changed = false;
+
   if (state == "RESPONSE") {
-    slotStates[slot] = RESPONSE;
-    slotStart[slot] = millis();
+    newState = RESPONSE;
   } else if (state == "WORKING") {
-    slotStates[slot] = WORKING;
-    slotStart[slot] = millis();
+    newState = WORKING;
   } else if (state == "DONE") {
-    slotStates[slot] = DONE;
-    slotStart[slot] = millis();
+    newState = DONE;
   } else if (state == "OFF") {
-    slotStates[slot] = IDLE;
+    newState = IDLE;
     setSlotLed(slot, false);
     updateLeds();
   }
+
+  if (newState != slotStates[slot]) {
+    changed = true;
+  }
+  if (newState != IDLE) {
+    slotStates[slot] = newState;
+    slotStart[slot] = millis();
+  } else {
+    slotStates[slot] = IDLE;
+  }
+
+  #ifdef BOARD_ESP32C3
+    if (changed && slot == 0) {
+      updateEpaper(slotStates[slot], slot);
+      lastDisplayState = slotStates[slot];
+    }
+  #endif
 }
 
 void handleSerial() {
@@ -244,7 +302,25 @@ void setup() {
 
   #ifdef BOARD_ESP32C3
     pinMode(LED_PIN, OUTPUT);
+
+    // ePaper init
+    epd_spi.begin(EPD_CLK, -1, EPD_DIN, EPD_CS);
+    epaper.epd2.selectSPI(epd_spi, SPISettings(4000000, MSBFIRST, SPI_MODE0));
+    epaper.init(115200);
+    epaper.setRotation(1);
+
+    // Boot test: "LOVE" on white background
+    epaper.setFullWindow();
+    epaper.firstPage();
+    do {
+      epaper.fillScreen(GxEPD_WHITE);
+      epaper.setFont(&FreeSansBold18pt7b);
+      epaper.setTextColor(GxEPD_BLACK);
+      epaper.setCursor(60, 70);
+      epaper.print("LOVE");
+    } while (epaper.nextPage());
   #endif
+
   strip.begin();
   strip.setBrightness(80);
   strip.clear();
